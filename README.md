@@ -48,8 +48,17 @@ Run tests and examples:
 
 ```matlab
 addpath(pwd)
+addpath(fullfile(pwd, 'plot'))
 run('tests/run_unit_tests.m')
 run('examples/run_all_examples.m')
+```
+
+Reusable plot functions live in `plot`. For example:
+
+```matlab
+links = {'a1','A',1.2; 'a2','A',1; 'A','AA',2};
+chart = SankeyPlot(links);
+chart.Title = 'SankeyPlot';
 ```
 
 Validation entry points:

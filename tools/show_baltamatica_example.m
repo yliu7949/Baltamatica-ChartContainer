@@ -5,6 +5,7 @@ function chart = show_baltamatica_example(exampleName)
 %   automation capture the actual rendered figure window instead.
     rootDir = fileparts(fileparts(mfilename('fullpath')));
     addpath(rootDir);
+    addpath(fullfile(rootDir, 'plot'));
     addpath(fullfile(rootDir, 'examples'));
     addpath(fullfile(rootDir, 'tools'));
 
@@ -29,6 +30,8 @@ function chart = show_baltamatica_example(exampleName)
             chart = LocalExtremaChart();
         case 'two_axes_chart'
             chart = TwoAxesChart();
+        case 'sankey_demo6_chord_chart'
+            chart = SankeyDemo6ChordChart();
         otherwise
             error(['Unknown example: ' exampleName]);
     end
