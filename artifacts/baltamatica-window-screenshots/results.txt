@@ -1,6 +1,0 @@
-confidence_chart: captured - Figure 1
-smooth_legend_plot: captured - Figure 2 (2167286)
-surf_image_plot: captured - Figure 3 (1644430)
-cart_polar_plot: captured - Figure 4 (3084358)
-local_extrema_chart: captured - Figure 5 (2819484)
-two_axes_chart: captured - Figure 6 (2622948)

@@ -1,6 +1,0 @@
-confidence_chart: rendered
-smooth_legend_plot: rendered
-surf_image_plot: rendered
-cart_polar_plot: rendered
-local_extrema_chart: rendered
-two_axes_chart: rendered

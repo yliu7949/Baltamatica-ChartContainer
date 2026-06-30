@@ -1,6 +1,0 @@
-confidence_chart: passed
-smooth_legend_plot: passed
-surf_image_plot: passed
-cart_polar_plot: passed
-local_extrema_chart: passed
-two_axes_chart: passed
