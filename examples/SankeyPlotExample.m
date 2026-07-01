@@ -3,6 +3,7 @@ function chart = SankeyPlotExample()
 
     rootDir = fileparts(fileparts(mfilename('fullpath')));
     addpath(fullfile(rootDir, 'plot'));
+    createScaledFigure(1.25);
 
     links = { ...
         'a1','A',1.2; 'a2','A',1; 'a1','B',0.6; 'a3','A',1; 'a3','C',0.5; ...
@@ -19,7 +20,7 @@ function chart = SankeyPlotExample()
         238,208,146] ./ 255;
 
     chart = SankeyPlot(links, ...
-        'Title', 'Sankey Plot', ...
+        'Title', '', ...
         'CData', colors, ...
         'Arrow', 'on', ...
         'ShowTicks', true, ...
@@ -27,5 +28,20 @@ function chart = SankeyPlotExample()
         'FontName', 'Cambria', ...
         'LabelFontSize', 17, ...
         'TickFontSize', 11, ...
-        'LabelRadius', 1.38);
+        'LabelRadius', 1.65);
+end
+
+function createScaledFigure(scale)
+%createScaledFigure Create a larger canvas for the scaled chord diagram.
+    try
+        fig = figure('Name', 'sankey demo6');
+        oldUnits = get(fig, 'Units');
+        set(fig, 'Units', 'pixels');
+        position = get(fig, 'Position');
+        position(3:4) = position(3:4) .* scale;
+        set(fig, 'Position', position);
+        set(fig, 'Units', oldUnits);
+    catch
+        figure('Name', 'sankey demo6');
+    end
 end

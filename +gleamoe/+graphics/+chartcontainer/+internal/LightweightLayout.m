@@ -39,7 +39,7 @@ classdef LightweightLayout < handle
             if isempty(tile)
                 tile = 1;
             end
-            if numel(tile) == 1
+            if isscalar(tile)
                 index = tile;
                 row = ceil(index / this.GridSize(2));
                 col = index - (row - 1) * this.GridSize(2);

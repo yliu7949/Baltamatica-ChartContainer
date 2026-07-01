@@ -145,7 +145,7 @@ classdef (Abstract) ChartContainer < handle
     end
 
     methods
-        function delete(this)
+        function delete(~)
             % Baltamatica community builds can lack the inherited handle
             % delete implementation. Managed graphics are owned by their
             % figure/axes parent, so chart deletion is intentionally minimal.
@@ -153,7 +153,7 @@ classdef (Abstract) ChartContainer < handle
 
         function set.Parent(this, value)
             this.Parent = value;
-            gleamoe.graphics.chartcontainer.internal.safeSet(this.Axes, 'Parent', value);
+            gleamoe.graphics.chartcontainer.internal.safeSet(this.Axes, 'Parent', value); %#ok<*MCSUP>
             gleamoe.graphics.chartcontainer.internal.safeSet(this.LayoutHandle, 'Parent', value);
             requestUpdate(this);
         end

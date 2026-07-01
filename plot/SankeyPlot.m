@@ -11,7 +11,7 @@ function chart = SankeyPlot(varargin)
 %
 %   Name-value pairs control appearance, including CData, Arrow, ShowTicks,
 %   ShowTickLabels, TickRadius, LabelRadius, FontName, LabelFontSize,
-%   TickFontSize, Title, RibbonAlpha, InnerRadius, SquareRadius, and AxesLimit.
+%   TickFontSize, Title, RibbonAlpha, Sep, InnerRadius, SquareRadius, and AxesLimit.
 
     [dataArgs, chartArgs] = parseSankeyInputs(varargin{:});
     chart = gleamoe.chart.SankeyPlotChart(dataArgs{:}, chartArgs{:});

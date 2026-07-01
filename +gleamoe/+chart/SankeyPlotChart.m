@@ -17,16 +17,17 @@ classdef SankeyPlotChart < gleamoe.graphics.chartcontainer.ChartContainer
         Arrow = 'on'
         ShowTicks = true
         ShowTickLabels = true
-        TickRadius = 1.17
-        LabelRadius = 1.38
+        TickRadius = 1.4625
+        LabelRadius = 1.725
         FontName = 'Cambria'
         LabelFontSize = 17
         TickFontSize = 11
         Title = ''
-        RibbonAlpha = 0.32
-        InnerRadius = 1.0
-        SquareRadius = [1.05 1.15]
-        AxesLimit = [-1.62 1.62 -1.62 1.62]
+        RibbonAlpha = 0.54
+        Sep = 1/10
+        InnerRadius = 1.25
+        SquareRadius = [1.3125 1.4375]
+        AxesLimit = [-1.725 1.725 -1.725 1.725]
     end
 
     properties (Access = private)
@@ -56,7 +57,7 @@ classdef SankeyPlotChart < gleamoe.graphics.chartcontainer.ChartContainer
         function set.AdjMat(this, value)
             if isempty(value)
                 this.AdjMat = [];
-            elseif ~isnumeric(value) || ndims(value) ~= 2 || size(value, 1) ~= size(value, 2)
+            elseif ~isnumeric(value) || ~ismatrix(value) || size(value, 1) ~= size(value, 2)
                 error('gleamoe:plot:SankeyPlot:AdjMat', 'AdjMat must be a square numeric matrix.');
             else
                 this.AdjMat = double(value);
@@ -124,6 +125,11 @@ classdef SankeyPlotChart < gleamoe.graphics.chartcontainer.ChartContainer
 
         function set.RibbonAlpha(this, value)
             this.RibbonAlpha = boundedScalar(this, value, 'RibbonAlpha', 0, 1);
+            requestUpdate(this);
+        end
+
+        function set.Sep(this, value)
+            this.Sep = boundedScalar(this, value, 'Sep', 0, 1/2);
             requestUpdate(this);
         end
 
@@ -251,7 +257,7 @@ classdef SankeyPlotChart < gleamoe.graphics.chartcontainer.ChartContainer
                 labels = this.Label(:);
             end
 
-            adj = zeros(numel(labels));
+            adj = zeros(numel(labels), numel(labels));
             for linkIdx = 1:numel(value)
                 sourceIdx = find(strcmp(labels, source{linkIdx}), 1);
                 targetIdx = find(strcmp(labels, target{linkIdx}), 1);
@@ -263,14 +269,14 @@ classdef SankeyPlotChart < gleamoe.graphics.chartcontainer.ChartContainer
             end
         end
 
-        function geom = chordGeometry(~, adj)
+        function geom = chordGeometry(this, adj)
             rowTotal = sum(adj, 2);
             colTotal = sum(adj, 1).';
             tickTotal = rowTotal + colTotal;
             spanWeight = tickTotal ./ 2;
             spanWeight(spanWeight <= 0) = eps;
             nodeCount = numel(spanWeight);
-            gap = 2.4 * pi / 180;
+            gap = 2 * pi * this.Sep / nodeCount;
             if nodeCount * gap > pi
                 gap = pi / max(1, nodeCount * 2);
             end
@@ -284,7 +290,8 @@ classdef SankeyPlotChart < gleamoe.graphics.chartcontainer.ChartContainer
                 startAngle(nodeIdx) = cursor;
                 endAngle(nodeIdx) = cursor + span(nodeIdx);
                 if tickTotal(nodeIdx) > 0
-                    splitAngle(nodeIdx) = startAngle(nodeIdx) + span(nodeIdx) .* colTotal(nodeIdx) ./ tickTotal(nodeIdx);
+                    splitAngle(nodeIdx) = startAngle(nodeIdx) + ...
+                        span(nodeIdx) .* colTotal(nodeIdx) ./ tickTotal(nodeIdx);
                 else
                     splitAngle(nodeIdx) = (startAngle(nodeIdx) + endAngle(nodeIdx)) ./ 2;
                 end
@@ -347,12 +354,16 @@ classdef SankeyPlotChart < gleamoe.graphics.chartcontainer.ChartContainer
                 targetArc = arcPoints(this, innerRadius, targetEnd, targetStart, 60);
             end
 
-            curveAB = quadraticBezier(this, pointA, control, pointB, 160);
-            curveCD = quadraticBezier(this, pointC, control, pointD, 160);
-            sourceArc = arcPoints(this, innerRadius, sourceEnd, sourceStart, 60);
+            % Coarse strips avoid transparent-patch artifacts without overloading Baltamatica.
+            flowCount = 64;
+            widthCount = 4;
+            curveAB = quadraticBezier(this, pointA, control, pointB, flowCount);
+            curveDC = quadraticBezier(this, pointD, control, pointC, flowCount);
+            sourceArc = arcPoints(this, innerRadius, sourceStart, sourceEnd, widthCount);
+            targetSection = resampledPolyline(this, targetArc, widthCount);
 
-            ribbon = [curveAB; targetArc; curveCD; sourceArc];
-            h = patch(ax, ribbon(:, 1), ribbon(:, 2), color, 'EdgeColor', 'none');
+            [x, y] = ribbonMesh(this, curveAB, curveDC, sourceArc, targetSection);
+            h = patch(ax, x, y, color, 'EdgeColor', 'none');
             gleamoe.graphics.chartcontainer.internal.safeSet(h, 'FaceAlpha', this.RibbonAlpha);
             remember(this, h);
         end
@@ -388,49 +399,149 @@ classdef SankeyPlotChart < gleamoe.graphics.chartcontainer.ChartContainer
 
         function addTicks(this, ax, geom, adj, outStart, outEnd, inStart, inEnd)
             tickColor = [0, 0, 0];
+            tickScale = this.TickRadius ./ 1.17;
+            tickLength = 0.02 .* tickScale;
+            tickLabelOffset = 0.03 .* tickScale;
+            nodeCount = numel(geom.Total);
+            arcPointCount = 80;
+            arcX = nan(1, nodeCount .* (arcPointCount + 1));
+            arcY = nan(1, nodeCount .* (arcPointCount + 1));
+            allTickAngles = [];
+            allTickValues = [];
+
             for nodeIdx = 1:numel(geom.Total)
-                thetaArc = linspace(geom.Start(nodeIdx), geom.End(nodeIdx), 100);
-                h = line(ax, cos(thetaArc) .* this.TickRadius, sin(thetaArc) .* this.TickRadius, ...
-                    'Color', tickColor, 'LineWidth', 0.8);
-                remember(this, h);
+                thetaArc = linspace(geom.Start(nodeIdx), geom.End(nodeIdx), arcPointCount);
+                arcRange = (nodeIdx - 1) .* (arcPointCount + 1) + (1:arcPointCount);
+                arcX(arcRange) = cos(thetaArc) .* this.TickRadius;
+                arcY(arcRange) = sin(thetaArc) .* this.TickRadius;
 
                 [tickAngles, tickValues] = nodeTickData(this, adj, nodeIdx, outStart, outEnd, inStart, inEnd);
-                for tickIdx = 1:numel(tickAngles)
-                    theta = tickAngles(tickIdx);
-                    p0 = circlePoint(this, this.TickRadius, theta);
-                    p1 = circlePoint(this, this.TickRadius + 0.02, theta);
-                    h = line(ax, [p0(1), p1(1)], [p0(2), p1(2)], 'Color', tickColor, 'LineWidth', 0.8);
-                    remember(this, h);
+                allTickAngles = [allTickAngles, tickAngles]; %#ok<AGROW>
+                allTickValues = [allTickValues, tickValues]; %#ok<AGROW>
+            end
 
-                    if this.ShowTickLabels
-                        pt = circlePoint(this, this.TickRadius + 0.03, theta);
-                        tickLabel = compactNumber(this, tickValues(tickIdx));
-                        [rotation, align] = tickLabelPlacement(this, theta);
-                        h = text(ax, pt(1), pt(2), tickLabel, 'Color', tickColor, ...
-                            'FontName', this.FontName, 'FontSize', this.TickFontSize, ...
-                            'Rotation', rotation, ...
-                            'HorizontalAlignment', align, ...
-                            'VerticalAlignment', 'middle');
-                        remember(this, h);
-                    end
-                end
+            h = line(ax, arcX, arcY, 'Color', tickColor, 'LineWidth', 0.8);
+            remember(this, h);
+
+            if isempty(allTickAngles)
+                return
+            end
+
+            tickRadius = this.TickRadius;
+            tickOuterRadius = this.TickRadius + tickLength;
+            tickX = [cos(allTickAngles) .* tickRadius; cos(allTickAngles) .* tickOuterRadius; ...
+                nan(size(allTickAngles))];
+            tickY = [sin(allTickAngles) .* tickRadius; sin(allTickAngles) .* tickOuterRadius; ...
+                nan(size(allTickAngles))];
+            h = line(ax, tickX(:).', tickY(:).', 'Color', tickColor, 'LineWidth', 0.8);
+            remember(this, h);
+
+            if this.ShowTickLabels
+                addTickLabels(this, ax, allTickAngles, allTickValues, ...
+                    this.TickRadius + tickLabelOffset, tickColor);
             end
         end
 
         function addLabels(this, ax, labels, geom)
-            for nodeIdx = 1:numel(labels)
+            labelCount = numel(labels);
+            x = zeros(labelCount, 1);
+            y = zeros(labelCount, 1);
+            rotations = zeros(labelCount, 1);
+            for nodeIdx = 1:labelCount
                 theta = (geom.Start(nodeIdx) + geom.End(nodeIdx)) / 2;
                 pt = circlePoint(this, this.LabelRadius, theta);
-                rotation = labelRotation(this, theta);
-                h = text(ax, pt(1), pt(2), labels{nodeIdx}, ...
+                x(nodeIdx) = pt(1);
+                y(nodeIdx) = pt(2);
+                rotations(nodeIdx) = labelRotation(this, theta);
+            end
+
+            try
+                h = text(ax, x, y, labels(:), ...
                     'FontName', this.FontName, ...
                     'FontSize', this.LabelFontSize, ...
-                    'FontWeight', 'bold', ...
-                    'Color', [0.12, 0.13, 0.16], ...
+                    'FontWeight', 'normal', ...
+                    'Color', [0, 0, 0], ...
                     'HorizontalAlignment', 'center', ...
-                    'VerticalAlignment', 'middle', ...
-                    'Rotation', rotation);
+                    'VerticalAlignment', 'middle');
+                setTextRotations(this, h, rotations);
                 remember(this, h);
+            catch
+                for nodeIdx = 1:labelCount
+                    h = text(ax, x(nodeIdx), y(nodeIdx), labels{nodeIdx}, ...
+                        'FontName', this.FontName, ...
+                        'FontSize', this.LabelFontSize, ...
+                        'FontWeight', 'normal', ...
+                        'Color', [0, 0, 0], ...
+                        'HorizontalAlignment', 'center', ...
+                        'VerticalAlignment', 'middle', ...
+                        'Rotation', rotations(nodeIdx));
+                    remember(this, h);
+                end
+            end
+        end
+
+        function addTickLabels(this, ax, tickAngles, tickValues, radius, tickColor)
+            tickAngles = tickAngles(:);
+            tickValues = tickValues(:);
+            labelCount = numel(tickAngles);
+            x = cos(tickAngles) .* radius;
+            y = sin(tickAngles) .* radius;
+            labels = cell(labelCount, 1);
+            rotations = zeros(labelCount, 1);
+            rightAlign = false(labelCount, 1);
+
+            for labelIdx = 1:labelCount
+                labels{labelIdx} = compactNumber(this, tickValues(labelIdx));
+                [rotations(labelIdx), align] = tickLabelPlacement(this, tickAngles(labelIdx));
+                rightAlign(labelIdx) = strcmp(align, 'right');
+            end
+
+            addTextGroup(this, ax, x(~rightAlign), y(~rightAlign), labels(~rightAlign), ...
+                rotations(~rightAlign), 'left', tickColor, this.TickFontSize, 'normal');
+            addTextGroup(this, ax, x(rightAlign), y(rightAlign), labels(rightAlign), ...
+                rotations(rightAlign), 'right', tickColor, this.TickFontSize, 'normal');
+        end
+
+        function addTextGroup(this, ax, x, y, labels, rotations, align, color, fontSize, fontWeight)
+            if isempty(labels)
+                return
+            end
+
+            try
+                h = text(ax, x(:), y(:), labels(:), ...
+                    'Color', color, ...
+                    'FontName', this.FontName, ...
+                    'FontSize', fontSize, ...
+                    'FontWeight', fontWeight, ...
+                    'HorizontalAlignment', align, ...
+                    'VerticalAlignment', 'middle');
+                setTextRotations(this, h, rotations);
+                remember(this, h);
+            catch
+                for labelIdx = 1:numel(labels)
+                    h = text(ax, x(labelIdx), y(labelIdx), labels{labelIdx}, ...
+                        'Color', color, ...
+                        'FontName', this.FontName, ...
+                        'FontSize', fontSize, ...
+                        'FontWeight', fontWeight, ...
+                        'Rotation', rotations(labelIdx), ...
+                        'HorizontalAlignment', align, ...
+                        'VerticalAlignment', 'middle');
+                    remember(this, h);
+                end
+            end
+        end
+
+        function setTextRotations(~, textHandles, rotations)
+            try
+                set(textHandles(:), {'Rotation'}, num2cell(rotations(:)));
+            catch
+                for textIdx = 1:min(numel(textHandles), numel(rotations))
+                    try
+                        set(textHandles(textIdx), 'Rotation', rotations(textIdx));
+                    catch
+                    end
+                end
             end
         end
 
@@ -476,6 +587,67 @@ classdef SankeyPlotChart < gleamoe.graphics.chartcontainer.ChartContainer
         function points = arcPoints(~, radius, startAngle, endAngle, count)
             theta = linspace(startAngle, endAngle, count).';
             points = [radius .* cos(theta), radius .* sin(theta)];
+        end
+
+        function points = resampledPolyline(~, controlPoints, count)
+            if size(controlPoints, 1) == count
+                points = controlPoints;
+                return
+            end
+
+            if size(controlPoints, 1) == 1
+                points = repmat(controlPoints, count, 1);
+                return
+            end
+
+            segmentLength = sqrt(sum(diff(controlPoints, 1, 1).^2, 2));
+            distance = [0; cumsum(segmentLength)];
+            totalDistance = distance(end);
+            if totalDistance <= eps
+                points = repmat(controlPoints(1, :), count, 1);
+                return
+            end
+
+            sampleDistance = linspace(0, totalDistance, count).';
+            points = zeros(count, 2);
+            segmentIdx = 1;
+            for sampleIdx = 1:count
+                while segmentIdx < numel(segmentLength) && sampleDistance(sampleIdx) > distance(segmentIdx + 1)
+                    segmentIdx = segmentIdx + 1;
+                end
+
+                localLength = segmentLength(segmentIdx);
+                if localLength <= eps
+                    points(sampleIdx, :) = controlPoints(segmentIdx, :);
+                else
+                    localT = (sampleDistance(sampleIdx) - distance(segmentIdx)) ./ localLength;
+                    points(sampleIdx, :) = (1 - localT) .* controlPoints(segmentIdx, :) + ...
+                        localT .* controlPoints(segmentIdx + 1, :);
+                end
+            end
+        end
+
+        function [x, y] = ribbonMesh(~, leftBoundary, rightBoundary, sourceSection, targetSection)
+            widthCount = size(sourceSection, 1);
+            widthT = linspace(0, 1, widthCount);
+
+            gridX = leftBoundary(:, 1) * (1 - widthT) + rightBoundary(:, 1) * widthT;
+            gridY = leftBoundary(:, 2) * (1 - widthT) + rightBoundary(:, 2) * widthT;
+            gridX(1, :) = sourceSection(:, 1).';
+            gridY(1, :) = sourceSection(:, 2).';
+            gridX(end, :) = targetSection(:, 1).';
+            gridY(end, :) = targetSection(:, 2).';
+
+            x = [ ...
+                reshape(gridX(1:end - 1, 1:end - 1), 1, []); ...
+                reshape(gridX(2:end, 1:end - 1), 1, []); ...
+                reshape(gridX(2:end, 2:end), 1, []); ...
+                reshape(gridX(1:end - 1, 2:end), 1, [])];
+            y = [ ...
+                reshape(gridY(1:end - 1, 1:end - 1), 1, []); ...
+                reshape(gridY(2:end, 1:end - 1), 1, []); ...
+                reshape(gridY(2:end, 2:end), 1, []); ...
+                reshape(gridY(1:end - 1, 2:end), 1, [])];
         end
 
         function point = circlePoint(~, radius, theta)
