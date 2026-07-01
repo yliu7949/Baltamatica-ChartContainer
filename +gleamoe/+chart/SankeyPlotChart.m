@@ -20,8 +20,8 @@ classdef SankeyPlotChart < gleamoe.graphics.chartcontainer.ChartContainer
         TickRadius = 1.4625
         LabelRadius = 1.725
         FontName = 'Cambria'
-        LabelFontSize = 17
-        TickFontSize = 11
+        LabelFontSize = 21
+        TickFontSize = 15
         Title = ''
         RibbonAlpha = 0.54
         Sep = 1/10
@@ -198,6 +198,7 @@ classdef SankeyPlotChart < gleamoe.graphics.chartcontainer.ChartContainer
                 addTicks(this, ax, geom, adj, outStart, outEnd, inStart, inEnd);
             end
             addLabels(this, ax, labels, geom);
+            centerAxes(this, ax);
         end
 
         function configureAxes(this, ax)
@@ -214,6 +215,57 @@ classdef SankeyPlotChart < gleamoe.graphics.chartcontainer.ChartContainer
                 gleamoe.graphics.chartcontainer.internal.deleteGraphics(this.ChartObjects{objIdx});
             end
             this.ChartObjects = {};
+        end
+
+        function centerAxes(this, ax)
+            try
+                originalUnits = get(ax, 'Units');
+                set(ax, 'Units', 'normalized');
+                position = get(ax, 'Position');
+                parentSize = parentPixelSize(this, ax);
+
+                if all(parentSize > 0)
+                    widthPixels = position(3) .* parentSize(1);
+                    heightPixels = position(4) .* parentSize(2);
+                    sidePixels = min(widthPixels, heightPixels);
+                    newWidth = sidePixels ./ parentSize(1);
+                    newHeight = sidePixels ./ parentSize(2);
+                else
+                    side = min(position(3:4));
+                    newWidth = side;
+                    newHeight = side;
+                end
+
+                position(1) = position(1) + (position(3) - newWidth) ./ 2;
+                position(2) = position(2) + (position(4) - newHeight) ./ 2;
+                position(3) = newWidth;
+                position(4) = newHeight;
+                set(ax, 'Position', position);
+                set(ax, 'Units', originalUnits);
+            catch
+            end
+        end
+
+        function sizePixels = parentPixelSize(~, ax)
+            sizePixels = [0, 0];
+            try
+                parent = get(ax, 'Parent');
+                originalUnits = get(parent, 'Units');
+                set(parent, 'Units', 'pixels');
+                position = get(parent, 'Position');
+                set(parent, 'Units', originalUnits);
+                sizePixels = double(position(3:4));
+            catch
+                try
+                    fig = ancestor(ax, 'figure');
+                    originalUnits = get(fig, 'Units');
+                    set(fig, 'Units', 'pixels');
+                    position = get(fig, 'Position');
+                    set(fig, 'Units', originalUnits);
+                    sizePixels = double(position(3:4));
+                catch
+                end
+            end
         end
 
         function remember(this, graphicsObject)
@@ -406,8 +458,8 @@ classdef SankeyPlotChart < gleamoe.graphics.chartcontainer.ChartContainer
             arcPointCount = 80;
             arcX = nan(1, nodeCount .* (arcPointCount + 1));
             arcY = nan(1, nodeCount .* (arcPointCount + 1));
-            allTickAngles = [];
-            allTickValues = [];
+            tickAngleCells = cell(1, nodeCount);
+            tickValueCells = cell(1, nodeCount);
 
             for nodeIdx = 1:numel(geom.Total)
                 thetaArc = linspace(geom.Start(nodeIdx), geom.End(nodeIdx), arcPointCount);
@@ -415,13 +467,15 @@ classdef SankeyPlotChart < gleamoe.graphics.chartcontainer.ChartContainer
                 arcX(arcRange) = cos(thetaArc) .* this.TickRadius;
                 arcY(arcRange) = sin(thetaArc) .* this.TickRadius;
 
-                [tickAngles, tickValues] = nodeTickData(this, adj, nodeIdx, outStart, outEnd, inStart, inEnd);
-                allTickAngles = [allTickAngles, tickAngles]; %#ok<AGROW>
-                allTickValues = [allTickValues, tickValues]; %#ok<AGROW>
+                [tickAngleCells{nodeIdx}, tickValueCells{nodeIdx}] = ...
+                    nodeTickData(this, adj, nodeIdx, outStart, outEnd, inStart, inEnd);
             end
 
             h = line(ax, arcX, arcY, 'Color', tickColor, 'LineWidth', 0.8);
             remember(this, h);
+
+            allTickAngles = [tickAngleCells{:}];
+            allTickValues = [tickValueCells{:}];
 
             if isempty(allTickAngles)
                 return
@@ -429,72 +483,50 @@ classdef SankeyPlotChart < gleamoe.graphics.chartcontainer.ChartContainer
 
             tickRadius = this.TickRadius;
             tickOuterRadius = this.TickRadius + tickLength;
-            tickX = [cos(allTickAngles) .* tickRadius; cos(allTickAngles) .* tickOuterRadius; ...
-                nan(size(allTickAngles))];
-            tickY = [sin(allTickAngles) .* tickRadius; sin(allTickAngles) .* tickOuterRadius; ...
-                nan(size(allTickAngles))];
+            tickCos = cos(allTickAngles);
+            tickSin = sin(allTickAngles);
+            tickX = [tickCos .* tickRadius; tickCos .* tickOuterRadius; nan(size(allTickAngles))];
+            tickY = [tickSin .* tickRadius; tickSin .* tickOuterRadius; nan(size(allTickAngles))];
             h = line(ax, tickX(:).', tickY(:).', 'Color', tickColor, 'LineWidth', 0.8);
             remember(this, h);
 
             if this.ShowTickLabels
+                tickLabelRadius = this.TickRadius + tickLabelOffset;
                 addTickLabels(this, ax, allTickAngles, allTickValues, ...
-                    this.TickRadius + tickLabelOffset, tickColor);
+                    tickCos(:) .* tickLabelRadius, tickSin(:) .* tickLabelRadius, tickColor);
             end
         end
 
         function addLabels(this, ax, labels, geom)
             labelCount = numel(labels);
-            x = zeros(labelCount, 1);
-            y = zeros(labelCount, 1);
-            rotations = zeros(labelCount, 1);
-            for nodeIdx = 1:labelCount
-                theta = (geom.Start(nodeIdx) + geom.End(nodeIdx)) / 2;
-                pt = circlePoint(this, this.LabelRadius, theta);
-                x(nodeIdx) = pt(1);
-                y(nodeIdx) = pt(2);
-                rotations(nodeIdx) = labelRotation(this, theta);
-            end
+            theta = (geom.Start(1:labelCount) + geom.End(1:labelCount)) ./ 2;
+            x = cos(theta(:)) .* this.LabelRadius;
+            y = sin(theta(:)) .* this.LabelRadius;
+            rotations = labelRotation(this, theta(:));
+            textArgs = textPropertyArgs(this, [0, 0, 0], this.LabelFontSize, 'normal', 'center');
 
             try
-                h = text(ax, x, y, labels(:), ...
-                    'FontName', this.FontName, ...
-                    'FontSize', this.LabelFontSize, ...
-                    'FontWeight', 'normal', ...
-                    'Color', [0, 0, 0], ...
-                    'HorizontalAlignment', 'center', ...
-                    'VerticalAlignment', 'middle');
-                setTextRotations(this, h, rotations);
+                if hasUniformRotation(this, rotations)
+                    h = text(ax, x, y, labels(:), textArgs{:}, 'Rotation', rotations(1));
+                else
+                    h = text(ax, x, y, labels(:), textArgs{:});
+                    setTextRotations(this, h, rotations);
+                end
                 remember(this, h);
             catch
                 for nodeIdx = 1:labelCount
                     h = text(ax, x(nodeIdx), y(nodeIdx), labels{nodeIdx}, ...
-                        'FontName', this.FontName, ...
-                        'FontSize', this.LabelFontSize, ...
-                        'FontWeight', 'normal', ...
-                        'Color', [0, 0, 0], ...
-                        'HorizontalAlignment', 'center', ...
-                        'VerticalAlignment', 'middle', ...
-                        'Rotation', rotations(nodeIdx));
+                        textArgs{:}, 'Rotation', rotations(nodeIdx));
                     remember(this, h);
                 end
             end
         end
 
-        function addTickLabels(this, ax, tickAngles, tickValues, radius, tickColor)
+        function addTickLabels(this, ax, tickAngles, tickValues, x, y, tickColor)
             tickAngles = tickAngles(:);
             tickValues = tickValues(:);
-            labelCount = numel(tickAngles);
-            x = cos(tickAngles) .* radius;
-            y = sin(tickAngles) .* radius;
-            labels = cell(labelCount, 1);
-            rotations = zeros(labelCount, 1);
-            rightAlign = false(labelCount, 1);
-
-            for labelIdx = 1:labelCount
-                labels{labelIdx} = compactNumber(this, tickValues(labelIdx));
-                [rotations(labelIdx), align] = tickLabelPlacement(this, tickAngles(labelIdx));
-                rightAlign(labelIdx) = strcmp(align, 'right');
-            end
+            labels = compactNumbers(this, tickValues);
+            [rotations, rightAlign] = tickLabelPlacementData(this, tickAngles);
 
             addTextGroup(this, ax, x(~rightAlign), y(~rightAlign), labels(~rightAlign), ...
                 rotations(~rightAlign), 'left', tickColor, this.TickFontSize, 'normal');
@@ -506,30 +538,40 @@ classdef SankeyPlotChart < gleamoe.graphics.chartcontainer.ChartContainer
             if isempty(labels)
                 return
             end
+            textArgs = textPropertyArgs(this, color, fontSize, fontWeight, align);
 
             try
-                h = text(ax, x(:), y(:), labels(:), ...
-                    'Color', color, ...
-                    'FontName', this.FontName, ...
-                    'FontSize', fontSize, ...
-                    'FontWeight', fontWeight, ...
-                    'HorizontalAlignment', align, ...
-                    'VerticalAlignment', 'middle');
-                setTextRotations(this, h, rotations);
+                if hasUniformRotation(this, rotations)
+                    h = text(ax, x(:), y(:), labels(:), textArgs{:}, 'Rotation', rotations(1));
+                else
+                    h = text(ax, x(:), y(:), labels(:), textArgs{:});
+                    setTextRotations(this, h, rotations);
+                end
                 remember(this, h);
             catch
                 for labelIdx = 1:numel(labels)
                     h = text(ax, x(labelIdx), y(labelIdx), labels{labelIdx}, ...
-                        'Color', color, ...
-                        'FontName', this.FontName, ...
-                        'FontSize', fontSize, ...
-                        'FontWeight', fontWeight, ...
-                        'Rotation', rotations(labelIdx), ...
-                        'HorizontalAlignment', align, ...
-                        'VerticalAlignment', 'middle');
+                        textArgs{:}, 'Rotation', rotations(labelIdx));
                     remember(this, h);
                 end
             end
+        end
+
+        function args = textPropertyArgs(this, color, fontSize, fontWeight, align)
+            args = { ...
+                'Color', color, ...
+                'FontName', this.FontName, ...
+                'FontSize', fontSize, ...
+                'FontWeight', fontWeight, ...
+                'FontAngle', 'normal', ...
+                'Interpreter', 'none', ...
+                'HorizontalAlignment', align, ...
+                'VerticalAlignment', 'middle'};
+        end
+
+        function tf = hasUniformRotation(~, rotations)
+            rotations = rotations(:);
+            tf = isempty(rotations) || all(abs(rotations - rotations(1)) < 1e-10);
         end
 
         function setTextRotations(~, textHandles, rotations)
@@ -546,32 +588,41 @@ classdef SankeyPlotChart < gleamoe.graphics.chartcontainer.ChartContainer
         end
 
         function [tickAngles, tickValues] = nodeTickData(~, adj, nodeIdx, outStart, outEnd, inStart, inEnd)
-            tickAngles = [];
-            tickValues = [];
-            currentValue = 0;
             rowTargets = find(adj(nodeIdx, :) > 0);
+            colSources = find(adj(:, nodeIdx).' > 0);
+            maxTickCount = numel(rowTargets) + double(~isempty(rowTargets)) + 2 .* numel(colSources);
+            tickAngles = zeros(1, maxTickCount);
+            tickValues = zeros(1, maxTickCount);
+            tickCount = 0;
+            currentValue = 0;
             for idx = 1:numel(rowTargets)
                 targetIdx = rowTargets(idx);
-                if isempty(tickAngles)
-                    tickAngles(end + 1) = outStart(nodeIdx, targetIdx); %#ok<AGROW>
-                    tickValues(end + 1) = currentValue; %#ok<AGROW>
+                if tickCount == 0
+                    tickCount = tickCount + 1;
+                    tickAngles(tickCount) = outStart(nodeIdx, targetIdx);
+                    tickValues(tickCount) = currentValue;
                 end
                 currentValue = currentValue + adj(nodeIdx, targetIdx);
-                tickAngles(end + 1) = outEnd(nodeIdx, targetIdx); %#ok<AGROW>
-                tickValues(end + 1) = currentValue; %#ok<AGROW>
+                tickCount = tickCount + 1;
+                tickAngles(tickCount) = outEnd(nodeIdx, targetIdx);
+                tickValues(tickCount) = currentValue;
             end
 
-            colSources = find(adj(:, nodeIdx).' > 0);
             for idx = 1:numel(colSources)
                 sourceIdx = colSources(idx);
-                if isempty(tickAngles) || abs(tickAngles(end) - inStart(sourceIdx, nodeIdx)) > eps
-                    tickAngles(end + 1) = inStart(sourceIdx, nodeIdx); %#ok<AGROW>
-                    tickValues(end + 1) = currentValue; %#ok<AGROW>
+                if tickCount == 0 || abs(tickAngles(tickCount) - inStart(sourceIdx, nodeIdx)) > eps
+                    tickCount = tickCount + 1;
+                    tickAngles(tickCount) = inStart(sourceIdx, nodeIdx);
+                    tickValues(tickCount) = currentValue;
                 end
                 currentValue = currentValue + adj(sourceIdx, nodeIdx);
-                tickAngles(end + 1) = inEnd(sourceIdx, nodeIdx); %#ok<AGROW>
-                tickValues(end + 1) = currentValue; %#ok<AGROW>
+                tickCount = tickCount + 1;
+                tickAngles(tickCount) = inEnd(sourceIdx, nodeIdx);
+                tickValues(tickCount) = currentValue;
             end
+
+            tickAngles = tickAngles(1:tickCount);
+            tickValues = tickValues(1:tickCount);
         end
 
         function color = nodeColor(this, idx)
@@ -654,23 +705,17 @@ classdef SankeyPlotChart < gleamoe.graphics.chartcontainer.ChartContainer
             point = [radius .* cos(theta), radius .* sin(theta)];
         end
 
-        function [rotation, align] = tickLabelPlacement(~, theta)
-            rotation = mod(theta ./ pi .* 180, 360);
-            if rotation > 90 && rotation < 270
-                rotation = rotation + 180;
-                align = 'right';
-            else
-                align = 'left';
-            end
+        function [rotation, rightAlign] = tickLabelPlacementData(~, theta)
+            rotation = mod(theta(:) ./ pi .* 180, 360);
+            rightAlign = rotation > 90 & rotation < 270;
+            rotation(rightAlign) = rotation(rightAlign) + 180;
         end
 
         function rotation = labelRotation(~, theta)
-            theta = mod(theta, 2 * pi);
-            if theta > 0 && theta < pi
-                rotation = -(0.5 * pi - theta) ./ pi .* 180;
-            else
-                rotation = -(1.5 * pi - theta) ./ pi .* 180;
-            end
+            theta = mod(theta(:), 2 * pi);
+            upperHalf = theta > 0 & theta < pi;
+            rotation = -(1.5 * pi - theta) ./ pi .* 180;
+            rotation(upperHalf) = -(0.5 * pi - theta(upperHalf)) ./ pi .* 180;
         end
 
         function value = normalizeTextVector(~, value, propertyName)
@@ -740,11 +785,16 @@ classdef SankeyPlotChart < gleamoe.graphics.chartcontainer.ChartContainer
             value = logical(value);
         end
 
-        function label = compactNumber(~, value)
-            if abs(value - round(value)) < 1e-10
-                label = sprintf('%.0f', value);
-            else
-                label = sprintf('%.1f', value);
+        function labels = compactNumbers(~, values)
+            values = values(:);
+            labels = cell(numel(values), 1);
+            integerMask = abs(values - round(values)) < 1e-10;
+
+            if any(integerMask)
+                labels(integerMask) = cellstr(num2str(round(values(integerMask)), '%.0f'));
+            end
+            if any(~integerMask)
+                labels(~integerMask) = cellstr(num2str(values(~integerMask), '%.1f'));
             end
         end
     end
