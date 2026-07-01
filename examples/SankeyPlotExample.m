@@ -34,7 +34,7 @@ end
 function createScaledFigure(scale)
 %createScaledFigure Create a larger canvas for the scaled chord diagram.
     try
-        fig = figure('Name', 'sankey demo6');
+        fig = figure('Name', 'SankeyPlot');
         oldUnits = get(fig, 'Units');
         set(fig, 'Units', 'pixels');
         position = get(fig, 'Position');
@@ -42,6 +42,6 @@ function createScaledFigure(scale)
         set(fig, 'Position', position);
         set(fig, 'Units', oldUnits);
     catch
-        figure('Name', 'sankey demo6');
+        figure('Name', 'SankeyPlot');
     end
 end
