@@ -17,11 +17,11 @@ This matrix tracks the intended v1 behavior against MATLAB R2026a ChartContainer
 | `getTheme(this)` | implemented | Returns a simple theme struct with MATLAB-like color defaults and axes-derived overrides when available. |
 | `mixin.Legend` | implemented | Provides `LegendVisible` and protected `getLegend(this)` with best-effort graphics creation. |
 | `mixin.Colorbar` | implemented | Provides `ColorbarVisible` and protected `getColorbar(this)` with best-effort graphics creation. |
-| Mixin class deletion in Baltamatica | degraded | Baltamatica reports ambiguous `delete` with multiple handle superclasses unless concrete mixin charts define `delete(this)`. The bundled mixin examples and tests do this. |
+| Mixin class deletion in Baltamatica | degraded | Baltamatica reports ambiguous `delete` with multiple handle superclasses unless concrete mixin charts define `delete(this)`. |
 | Automatic update on arbitrary subclass properties | degraded | Subclasses should define property setters that call `requestUpdate(this)`. MATLAB's hidden listener machinery is not reproduced. |
 | Save/load reconstruction | blocked-by-baltamatica | Not implemented in v1; MATLAB internal serialization hooks are private and platform-specific. |
 | Toolbars/interactivity/layout containers | blocked-by-baltamatica | Baltamatica `scripts/graph` shows `Toolbar`, some `Parent`, and `Clipping` gaps. |
-| GUI rendering | implemented with platform-specific capture | MATLAB screenshots pass through `run_all_examples`. Baltamatica desktop renders all examples; PNGs are captured from live figure windows because this build lacks `drawnow`, `exportgraphics`, `saveas`, and `print`. |
+| GUI rendering | partial | MATLAB can render the bundled Sankey example. Baltamatica graphics examples should be run in the desktop application because `-nodesktop` sessions do not expose the required `axes` graphics path. |
 
 Primary references:
 

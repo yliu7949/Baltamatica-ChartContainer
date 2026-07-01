@@ -2,13 +2,42 @@
 
 MATLAB-style chart container classes for Baltamatica experiments.
 
-The implementation mirrors the public `matlab.graphics.chartcontainer.*` authoring model:
+The project mirrors the public `matlab.graphics.chartcontainer.*` authoring
+model where Baltamatica provides compatible graphics behavior. Chart classes:
 
 - subclass `gleamoe.graphics.chartcontainer.ChartContainer`;
-- implement protected `setup(this)` and `update(this)`;
+- implement protected `setup(this)` and `update(this)` hooks;
 - call `requestUpdate(this)` from custom property setters;
-- optionally mix in `gleamoe.graphics.chartcontainer.mixin.Legend` or `gleamoe.graphics.chartcontainer.mixin.Colorbar`;
+- optionally use `gleamoe.graphics.chartcontainer.mixin.Legend` or
+  `gleamoe.graphics.chartcontainer.mixin.Colorbar`;
 - call the superclass constructor from subclasses with `varargin`.
+
+## Included Plot
+
+The reusable plot entry point is `plot/SankeyPlot.m`. It accepts a link table,
+separate source/target/value vectors, or an adjacency matrix:
+
+```matlab
+addpath(pwd)
+addpath(fullfile(pwd, 'plot'))
+
+links = {'a1','A',1.2; 'a2','A',1; 'A','AA',2};
+chart = SankeyPlot(links, 'Arrow', 'on');
+```
+
+The bundled demo is:
+
+```matlab
+addpath(pwd)
+addpath(fullfile(pwd, 'examples'))
+SankeyPlotExample()
+```
+
+`SankeyPlotExample` recreates the `slandarer/MATLAB-sankey-plot` demo6 chord
+diagram style, with Baltamatica-oriented rendering choices for transparent
+ribbons, ticks, and labels.
+
+## ChartContainer Sketch
 
 ```matlab
 classdef MyChart < gleamoe.graphics.chartcontainer.ChartContainer
@@ -44,28 +73,17 @@ classdef MyChart < gleamoe.graphics.chartcontainer.ChartContainer
 end
 ```
 
-Run tests and examples:
+## Validation
 
-```matlab
-addpath(pwd)
-addpath(fullfile(pwd, 'plot'))
-run('tests/run_unit_tests.m')
-run('examples/run_all_examples.m')
+This repository currently does not include a standalone test harness or
+screenshot export tooling. For a quick MATLAB smoke test, run:
+
+```powershell
+matlab.exe -batch "addpath(pwd); addpath(fullfile(pwd,'plot')); addpath(fullfile(pwd,'examples')); chart=SankeyPlotExample(); disp(class(chart));"
 ```
 
-Reusable plot functions live in `plot`. For example:
+Baltamatica `-nodesktop` sessions do not provide full graphics support for this
+example because `axes` is unavailable there. Run graphics examples in the
+Baltamatica desktop application.
 
-```matlab
-links = {'a1','A',1.2; 'a2','A',1; 'A','AA',2};
-chart = SankeyPlot(links);
-chart.Title = 'SankeyPlot';
-```
-
-Validation entry points:
-
-- MATLAB: `tools/run_matlab_validation.m`
-- Baltamatica CLI: `tools/run_baltamatica_cli_validation.m`
-- Baltamatica desktop live render: `tools/run_baltamatica_gui_validation.m`
-- Baltamatica single-window render for desktop capture: `tools/show_baltamatica_example.m`
-
-See `docs/compatibility_matrix.md` for implemented, degraded, and blocked behavior.
+See `docs/compatibility_matrix.md` for the current implementation notes.
