@@ -360,10 +360,29 @@ classdef SankeyPlotChart < gleamoe.graphics.chartcontainer.ChartContainer
         function addNodeArc(this, ax, startAngle, endAngle, color)
             innerRadius = this.SquareRadius(1);
             outerRadius = this.SquareRadius(2);
-            theta = linspace(startAngle, endAngle, 100);
-            x = [outerRadius .* cos(theta), innerRadius .* cos(fliplr(theta))];
-            y = [outerRadius .* sin(theta), innerRadius .* sin(fliplr(theta))];
-            h = patch(ax, x, y, color, 'EdgeColor', 'none');
+            if endAngle < startAngle
+                endAngle = endAngle + 2 * pi;
+            end
+
+            span = abs(endAngle - startAngle);
+            pointCount = max(24, ceil(span / (pi / 360)) + 1);
+            theta = linspace(startAngle, endAngle, pointCount).';
+
+            outer = [outerRadius .* cos(theta), outerRadius .* sin(theta)];
+            inner = [innerRadius .* cos(theta), innerRadius .* sin(theta)];
+            vertices = [outer; inner];
+
+            outerStart = (1:pointCount - 1).';
+            outerEnd = outerStart + 1;
+            innerStart = pointCount + outerStart;
+            innerEnd = innerStart + 1;
+            faces = [outerStart, outerEnd, innerEnd, innerStart];
+
+            x = reshape(vertices(faces.', 1), 4, []);
+            y = reshape(vertices(faces.', 2), 4, []);
+
+            h = patch(ax, x, y, color, ...
+                'EdgeColor', 'none');
             remember(this, h);
         end
 
